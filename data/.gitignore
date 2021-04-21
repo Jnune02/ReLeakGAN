@@ -1,0 +1,12 @@
+old.bk/
+*.dump
+*.txt
+test_corpus.npy
+corpus.npy
+train_corpus_lawrence_padded.npy
+train_corpus_padded.npy
+train_corpus_unpadded.npy
+*~
+**/*~
+**/\#fullCorpus.txt#
+sentenceCorpus.pkl

@@ -1,0 +1,10 @@
+{
+    "positive_filepath":"./data/featural_vectors.npy",
+    "negative_filepath":"./data/gen_vectors.npy",
+    "batch_size":10,
+    "shuffle":true,
+    "num_workers":4,
+    "pin_memory":false,
+    "paragraph_length": 30,
+    "par_data_filepath":"./data/featural_parlengths.npy"
+}

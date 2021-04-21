@@ -1,0 +1,8 @@
+{
+	"positive_filepath":"./data/featural_vectors.npy",
+	"negative_filepath":"./data/gen_vectors.npy",
+    "batch_size":10,
+    "shuffle":true,
+    "num_workers":1,
+    "pin_memory":false
+}

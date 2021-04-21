@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/mnt/tmp/ReLeakGan/main.py", line 451, in <module>
+    main()
+  File "/mnt/tmp/ReLeakGan/main.py", line 414, in main
+    model_dict, optimizer_dict, scheduler_dict = pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict, dis_data_params, vocab_size=vocab_size, positive_file=pos_file, negative_file=neg_file, batch_size=batch_size, epochs=1, use_cuda=use_cuda)
+  File "/mnt/tmp/ReLeakGan/main.py", line 229, in pretrain_discriminator
+    for i, sample in enumerate(dataloader):
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/dataloader.py", line 435, in __next__
+    data = self._next_data()
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/dataloader.py", line 1085, in _next_data
+    return self._process_data(data)
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/dataloader.py", line 1111, in _process_data
+    data.reraise()
+  File "/usr/lib64/python3.9/site-packages/torch/_utils.py", line 428, in reraise
+    raise self.exc_type(msg)
+TypeError: Caught TypeError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/_utils/worker.py", line 198, in _worker_loop
+    data = fetcher.fetch(index)
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/_utils/fetch.py", line 44, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/usr/lib64/python3.9/site-packages/torch/utils/data/_utils/fetch.py", line 44, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/mnt/tmp/ReLeakGan/data_iter.py", line 30, in __getitem__
+    data = torch.from_numpy(self.data[idx]).long()
+TypeError: can't convert np.ndarray of type numpy.object_. The only supported types are: float64, float32, float16, complex64, complex128, int64, int32, int16, int8, uint8, and bool.

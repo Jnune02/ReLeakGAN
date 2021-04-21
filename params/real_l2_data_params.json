@@ -1,0 +1,7 @@
+{
+    "filepath":"./data/featural_vectors.npy",
+    "batch_size":10,
+    "shuffle":true,
+    "num_workers":4,
+    "pin_memory":false
+}
