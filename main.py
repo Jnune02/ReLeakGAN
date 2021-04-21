@@ -14,7 +14,7 @@ from torch.autograd import Variable
 from torch.nn.utils import clip_grad_norm_
 
 from data_iter import real_data_loader, dis_data_loader, dis_l2_data_loader, vector_data_loader
-from utils import recurrent_func, loss_func, get_sample, get_rewards, getNullFeature
+from utils import recurrent_func, loss_func, get_sample, get_rewards
 from Discriminator import Discriminator, Discriminator_l2
 from Generator import Generator, Generator_l2
 from target_lstm import TargetLSTM
@@ -270,7 +270,6 @@ def pretrain_generator_l2(model_dict_l2, optimizer_dict, scheduler_dict):
 
 def generate_samples(model_dict, negative_file, batch_size,
                      use_cuda=False, temperature=1.0):
-    print("Generating Samples")
     
     neg_data = []
     for i in range(batch_size):
@@ -278,12 +277,13 @@ def generate_samples(model_dict, negative_file, batch_size,
 
         if i < 25:
             print("Generated: %s" % sample)
-        elif i == 25:
-            print("Omitting remaining samples for brevity.")
-        
-        sample = sample.cpu()
-        neg_data.append(sample.data.numpy())
+        elif i == 25:        
+            sample = sample.cpu()
+            neg_data.append(sample.data.numpy())
     neg_data = np.concatenate(neg_data, axis=0)
+
+    print("Saving generated samples for reuse.")
+    
     np.save(negative_file, neg_data)
 
 def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
@@ -294,6 +294,11 @@ def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
     d_optimizer = optimizer_dict["discriminator"]
     d_lr_scheduler = scheduler_dict["discriminator"]
 
+    print('''Generate samples from untrained generator. Note: The generation function
+    of the generator receives feature input from the discriminator even when both discriminator
+    and generator are untrained. This appears to have weak honing effect, causing generated
+    data to be uncharacteristically good, even at early stages and low epoch iterations.''')
+    
     generate_samples(model_dict, negative_file, batch_size, use_cuda, temperature)
     dataloader = dis_data_loader(**dis_dataloader_params) #this is where data iterator is used
 
@@ -317,36 +322,9 @@ def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
             outs = discriminator(data)
 
             ##################
-            # Injection Point: Collect featural data in numpy array.
-
-
-            # NOTE: We need to check which elements of the batch_size
-            # that the discriminator predicts to be as part of the
-            # positive sample, and only extract the featural data of
-            # those elements to the featural corpus file. We also need
-            # to reshape the cpuTensor elements so that each element
-            # along axis-0 corresponds to the featural embedding
-            # vector for only one input sentence.
+            #
             
-            print("Found data: %s. \n\n Featural Output: %s , %s"
-                  % (sample["data"], outs["feature"], outs["feature"].tolist()))
-
-            # First, make sure that we haven't already initialized the
-            # numpy container.
-
-            cpuTensor = outs["feature"].cpu()
-            
-            if features  == "undefined":
-                # If here, then we first need to create a numpy array
-                # with the same shape as the featural output from the
-                # discriminator.
-                #features = np.empty(cpuTensor.detach().numpy().shape)
-                features = []
-
-            # Now we're guaranteed that we can append the featural
-            # output to the numpy array.
-            #features = np.append(features, cpuTensor.detach().numpy(), axis=0)
-            features.append(cpuTensor.detach().numpy().tolist())
+            print("Featural Output: %s" % outs["feature"])
 
             #
             #################
@@ -362,17 +340,7 @@ def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
                 break
         if DEBUG_NODE == True:
             break
-
-    ################
-    # Injection Point: Save collected featural data to 'featural_vectors.npy'
-
-    with open('./data/featural_vectors.npy', 'wb') as fd:
-        features = np.array(features)
-        np.save(fd, features)
-
-    #
-    ################
-    
+        
     model_dict["discriminator"] = discriminator
     optimizer_dict["discriminator"] = d_optimizer
     scheduler_dict["discriminator"] = d_lr_scheduler
@@ -389,6 +357,8 @@ def pretrain_discriminator_l2(model_dict_l2, optimizer_dict_l2, scheduler_dict_l
     d_lr_scheduler = scheduler_dict_l2["discriminator"]
 
     neg_l2_fd = dis_l2_data_params["negative_filepath"]
+
+    print("Generate samples from untrained 2nd level generator.")
     
     generate_samples(model_dict_l2, neg_l2_fd, batch_size, use_cuda, temperature)
     dataloader = dis_data_loader(**dis_l2_data_params)
@@ -414,7 +384,7 @@ def pretrain_discriminator_l2(model_dict_l2, optimizer_dict_l2, scheduler_dict_l
 
             outs = discriminator_l2(data)
 
-            ## SITE: FUTURE INJECTION POINT.
+            print("level 2 Featural Vector: %s" % outs["feature"])
 
             loss = cross_entropy(outs["score"], label.view(-1)) + discriminator_l2.l2_loss()
             d_lr_schedular.step()
@@ -469,6 +439,8 @@ def adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_dataloader
     d_lr_scheduler = scheduler_dict["discriminator"]
 
     #Adversarial training for generator
+    print("Use adversarial feedback to improve generator.")
+    
     for _ in range(gen_train_num):
         m_lr_scheduler.step()
         w_lr_scheduler.step()
@@ -511,6 +483,8 @@ def adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_dataloader
 
     #Adversarial training for discriminator
     for n in range(dis_train_epoch):
+
+        print("Generate samples from improved generator.")
         generate_samples(model_dict, neg_file, batch_size, use_cuda, temperature)
         dis_dataloader_params["positive_filepath"] = pos_file
         dis_dataloader_params["negative_filepath"] = neg_file
@@ -563,18 +537,14 @@ def adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_dataloader
     return model_dict, optimizer_dict, scheduler_dict
 
 
-# def save_checkpoint(model_dict, optimizer_dict, scheduler_dict, ckpt_num, replace=False):
-#     file_name = "checkpoint" + str(ckpt_num) + ".pth.tar"
-#     torch.save({"model_dict": model_dict, "optimizer_dict": optimizer_dict, "scheduler_dict": scheduler_dict, "ckpt_num": ckpt_num}, file_name)
-#     if replace:
-#         ckpts = glob.glob("checkpoint*")
-#         ckpt_nums = [int(x.split('.')[0][10:]) for x in ckpts]
-#         oldest_ckpt = "checkpoint" + str(min(ckpt_nums)) + ".pth.tar"
-#         os.remove(oldest_ckpt)
+def save_checkpoint(model_dict, optimizer_dict, scheduler_dict):
+    file_path = "./checkpoints/"
+    file_name = "checkpoint" + ".pth.tar"
+    torch.save({"model_dict": model_dict, "optimizer_dict": optimizer_dict, "scheduler_dict": scheduler_dict}, file_path + file_name)
 
-# def restore_checkpoint(ckpt_path):
-#     checkpoint = torch.load(ckpt_path)
-#     return checkpoint
+def restore_checkpoint(ckpt_path):
+    checkpoint = torch.load(ckpt_path)
+    return checkpoint
 
 def dis_l2_data_params(model_dict, **kwargs):
     par_data_fd = open(kwargs["par_data_filepath"], 'rb')
@@ -647,7 +617,7 @@ def fetch_l2_corpus(model_dict, positive_filepath, dis_l2_data_params, use_cuda)
 # that the data is the correct shape for being fed into the l2
 # discriminator.
     
-def dis_l2_pad_pars(vectors, dis_l2_data_params, use_cuda=False, temperature=1.0):
+def dis_l2_corpus_convs(vectors, dis_l2_data_params, use_cuda=False, temperature=1.0):
     par_filepath = dis_l2_data_params["par_data_filepath"]
     par_len = dis_l2_data_params["paragraph_length"]
 
@@ -723,7 +693,8 @@ def main():
     #         return
 
     #############################################################################
-    
+
+    print("load level 1 training parameters.")
     param_dict = get_arguments()
     # Disable cuda for now. We will re-enable when I submit to Azure
     #Compute Cluster. Note: Technically we may still use cuda
@@ -742,6 +713,8 @@ def main():
     #     scheduler_dict = checkpoint["scheduler_dict"]
     #     ckpt_num = checkpoint["ckpt_num"]
     # else:
+
+    print("Initialize Network Models as Dictionaries")
     
     model_dict = prepare_model_dict("./params/leak_gan_params.json", "l1", use_cuda)
     lr_dict = param_dict["train_params"]["lr_dict"]
@@ -794,40 +767,21 @@ def main():
         print("Epoch: {}/{}  Adv".format(epoch, param_dict["train_params"]["total_epoch"]))
         model_dict, optimizer_dict, scheduler_dict = adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_data_params, vocab_size=vocab_size, pos_file=pos_file, neg_file=neg_file, batch_size=batch_size, use_cuda=use_cuda, epoch=epoch, tot_epoch=param_dict["train_params"]["total_epoch"])
 
-    ##############################################################################
-    #
-    # Epilogue Section
-
+    print("Saving Trained Level 1 Models as Checkpoint")
+    save_checkpoint(model_dict, optimizer_dict, scheduler_dict)
         
-    print("#########################################################################")
-    print("# After this point, the control flow and logic of the application is    #\n" \
-          "# unstable, and the program will most certainly crash near immediately  #\n" \
-          "# after this point. Still, feel free to continue if you want to see.    #\n" \
-          "# ;^D                                                                   #\n" \
-          "#########################################################################\n")
-
-    # user_input = 'x'
-    # yes_response = 'y'
-    # no_response = 'n'
-
-    # while user_input != yes_response and user_input != no_response:
-    #     print("Proceed? (y/n)")
-    #     user_input = str(input())
-
-    #     if user_input == yes_response:
-    #         break
-    #     elif user_input == no_response:
-    #         printf("Thank you for using ReLeakGAN version 0.1a!")
-    #         return
-    #
-    #############################################################################
-
+    # * * *
+        
+    print("Finished word level training. Begin sentence level training.")
+        
     # Prepare model dictionary, and fetch level 2 parameters.
+    print("Load level 2 training paramters.")
     param_dict_l2 = get_arguments_l2()
 
     if use_cuda:
         param_dict_l2["dis_data_params"]["pin_memory"] = True
-    
+
+    print("Construct level 2 network models as dictionaries.")
     model_dict_l2 = prepare_model_dict("./params/leak_gan_l2_params.json", "l2", use_cuda)
     optimizer_dict_l2 = prepare_optimizer_dict(model_dict_l2, lr_dict)
     scheduler_dict_l2 = prepare_scheduler_dict(optimizer_dict_l2, gamma=gamma, step_size=step_size)
@@ -835,18 +789,25 @@ def main():
     # We need to re-run the original training corpus through the l1
     # discriminator, and have it spit out featural vectors for us.
 
-    l2_corpus = fetch_l2_corpus(model_dict, param_dict["dis_data_params"]["positive_filepath"],
-                                param_dict_l2["dis_data_params"], use_cuda=use_cuda)
+    try:
+        print("Attempting to load previously generated l2_corpus.")
+        l2_corpus = np.load("./data/featural_vectors.npy")
+    except:
+        print("Extract level 2 input from level 1 discriminator")
+        l2_corpus = fetch_l2_corpus(model_dict, param_dict["dis_data_params"]["positive_filepath"],
+                                    param_dict_l2["dis_data_params"], use_cuda=use_cuda)
 
-    sout = open("./data/sout.txt", 'w')
-    print("Shape of l2_corpus: %s" % (list(l2_corpus.shape)), file=sout)
+        print("Convert level 2 output tensor to appropriate shape")
+        print("Shape of l2_corpus before conversion: %s" % (list(l2_corpus.shape)))
 
-    # We need to group the vectors into paragraphs.
-    l2_corpus = dis_l2_pad_pars(l2_corpus, param_dict_l2["dis_data_params"], use_cuda=use_cuda)
-    np.save("./data/featural_vectors.npy", l2_corpus)
+        # We need to group the vectors into paragraphs.
+        print("Converting... this will take a while.")
+        l2_corpus = dis_l2_corpus_convs(l2_corpus, param_dict_l2["dis_data_params"], use_cuda=use_cuda)
+        print("Shape of l2_corpus after conversion: %s" % (list(l2_corpus.shape)))
 
-    print("Shape of l2_corpus after padding: %s" % (list(l2_corpus.shape)), file=sout)
-
+        print("Save converted featural vectors for reuse.")
+        np.save("./data/featural_vectors.npy", l2_corpus)
+        
     print("######################################################################")
     print("# Now Pretraining Level 2 Discriminator... please stand by.          #")
     print("######################################################################")
@@ -861,11 +822,11 @@ def main():
     
     for i in range(num_epochs):
         print("Epoch: {}/{} Pre-Discrimination".format(i, num_epochs))
-        model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_discriminator_l2(model_dict_l2,
-                                                                                        optimizer_dict_l2,
-                                                                                        scheduler_dict_l2,
-                                                                                        dis_l2_data_params,
-                                                                                        use_cuda=use_cuda)
+        # model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_discriminator_l2(model_dict_l2,
+        #                                                                                 optimizer_dict_l2,
+        #                                                                                 scheduler_dict_l2,
+        #                                                                                 dis_l2_data_params,
+        #                                                                                 use_cuda=use_cuda)
 
         if DEBUG_NODE == True:
             break
@@ -880,7 +841,7 @@ def main():
     
     for i in range(num_epochs):
         print("Epoch: {}/{} Pre-Generation".format(i, num_epochs))
-        model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_generator_l2(model_dict_l2, optimizer_dict, schedular_dict, use_cuda=use_cuda)
+        # model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_generator_l2(model_dict_l2, optimizer_dict, schedular_dict, use_cuda=use_cuda)
 
         if DEBUG_NODE == True:
             break
@@ -891,7 +852,8 @@ def main():
     # because we are training BOTH the l1 AND the l2 discriminators
     # and generators in tandem.
 
-    
+    print("Level 2 Adversarial Training Not Yet Implemented.")
+
     
     ##############################################################################
     # Please note: Comments below this point MAY NOT actually reflect

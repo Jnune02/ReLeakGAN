@@ -1,0 +1,75 @@
+//////////////////
+// To-Do File & Project Charter
+////////////////
+
+1. Initialize Github separate repository for ReLeakGAN, NOT A FORK of
+LeakGAN. (Completed)
+
+2. Introspect the LeakGAN codebase and determine points of entry for
+Machine Learning Input Data. (Completed)
+
+3. Reverse engineer binary data files at point of entry and determine
+internal structure. (Far more straightforward than the un-initiated
+might have expected.) (Completed)
+
+// NOTE: Turns out, the default data set that LeakGAN was using was
+// Chinese Encoded Text! That means there might be some code specific
+// tweaks required to ensure nothing unexpected happens with the change
+// in encoding. Overall, though, a drop in replacement of their
+// foundational corpus with mine should be feasible.
+
+4. Acquire foundational source texts. (Completed)
+
+5. Process foundational source texts to produce wordlist corpus. (Completed)
+
+6. Convert wordlist corpus into ndarray of dimension(1) (Completed)
+
+7. Process foundational source texts to produce sentence level corpus
+mapping sentences to collections of list index values within the
+wordlist corpus. (Completed)
+
+8. Process foundational source texts to produce paragraph level corpus
+mapping paragraphs to collections of list index values within the
+sentence level corpus. (Deferred)
+
+// NOTE: I decided it would not be a good idea to go past 2 levels of
+recursion and try to recurse past paragraphs into the chapter and work
+level corpuses. As things go higher up, there's less and less volume
+to each corpus, which will prove hard to overcome without acquiring
+truly VAST samples of different works with different chapters. The
+probability for mode collapse issues past the paragraph level I feel
+becomes extremely high.
+
+9. Introspect the LeakGAN codebase to determine points of output for
+Adversarially Generated Data. (I tried to just run LeakGAN with
+default settings, but the program took literally all day running until
+I force killed it. It also raped one of my hard drives pretty
+badly. I'm going to try again, but at a point when I'll be sure I can
+leave my computer running and after I've looked at the code so I know
+exactly what I should be expecting to see.) And Run LeakGAN with
+DEFAULT SETTINGS so as to capture this output.
+
+10. Modify LeakGAN to accept my wordlist level corpus, and again run
+with DEFAULT SETTINGS. We're not looking for anything fancy, here,
+folks. Just make sure we produce sensible english language
+output. PUSH 1ST MAJOR REPOSITORY UPDATE.
+
+11. Introspect LeakGAN and go over the academic paper one more time to
+really make sure I understand how the architecture components line up
+and plug into each other. Put together some modified architectural
+diagrams and charts to help me come up with a 1st, and 2nd level recursive
+architecture. Get feedback from instructor, if necessary.
+
+12. Implement 1st recursive ReLeakGAN Architecture. Run with default settings.
+
+13. Implement 2nd recursive ReLeakGAN Architecture. Run with default settings.
+
+14. Fill in crucial parts of the required academic LaTeX
+paper. Namely, LeakGAN Overview, LeakGAN/ReLeakGAN architectural
+comparison and contrast, Methodology, Results.
+
+15. Fill in additional parts of the required academic LaTeX
+paper. Namely, abstract, introduction, survey of the kinds of neural
+networks used, et al.
+
+16. Acquire professorial feedback as necessary.
