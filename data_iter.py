@@ -14,7 +14,7 @@ class Real_Dataset(Dataset):
 
 class Vector_Dataset(Dataset):
     def __init__(self, filepath):
-        self.data = np.load(filepath)
+        self.data = np.array(np.load(filepath))
         self.label = np.array([1 for _ in self.data])
 
     def __len__(self):

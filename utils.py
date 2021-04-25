@@ -290,6 +290,13 @@ def recurrent_func(f_type = "pre"):
             step_size = generator.step_size
             goal_out_size = generator.worker.goal_out_size
             vocab_size = discriminator.vocab_size
+
+            ##################################################################
+            
+            vector_size = discriminator.num_filters_total
+
+            ##################################################################
+            
             #G forward
             while t < seq_len:
                 #Extract f_t

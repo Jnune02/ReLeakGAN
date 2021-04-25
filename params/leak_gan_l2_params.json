@@ -1,6 +1,6 @@
 {
     "discriminator_params":{
-        "seq_len":5,
+        "seq_len":30,
         "num_classes":2,
         "vocab_size":11134,
         "dis_emb_dim":10,

@@ -115,8 +115,8 @@ class Generator_l2(nn.Module):
     def __init__(self, worker_params, manager_params, step_size):
         super(Generator_l2, self).__init__()
         self.step_size = step_size
-        self.worker = Worker(**worker_params)
-        self.manager = Manager(**manager_params)
+        self.worker = Worker_l2(**worker_params)
+        self.manager = Manager_l2(**manager_params)
 
     def init_hidden(self):
         h = Variable(torch.zeros(self.worker.batch_size, self.worker.hidden_dim))
@@ -137,3 +137,72 @@ class Generator_l2(nn.Module):
         x_tp1 = Categorical(probs).sample()
         return x_tp1, h_m_tp1, c_m_tp1, h_w_tp1, c_w_tp1,\
                 last_goal_temp, real_goal, sub_goal, probs, t + 1
+
+class Manager_l2(nn.Module):
+    def __init__(self, batch_size, hidden_dim, goal_out_size):
+        super(Manager_l2, self).__init__()
+        self.batch_size = batch_size
+        self.hidden_dim = hidden_dim
+        self.goal_out_size = goal_out_size
+        self.recurrent_unit = nn.LSTMCell(
+            self.goal_out_size, #input size
+            self.hidden_dim #hidden size
+        )
+        self.fc = nn.Linear(
+            self.hidden_dim, #in_features
+            self.goal_out_size #out_features
+        )
+        self.goal_init = nn.Parameter(torch.zeros(self.batch_size, self.goal_out_size))
+        self._init_params()
+
+    def _init_params(self):
+        for param in self.parameters():
+            nn.init.normal_(param, std=0.1)
+        self.goal_init.data = truncated_normal(
+            self.goal_init.data.shape
+        )
+    def forward(self, f_t, h_m_t, c_m_t):
+        """
+        f_t = feature of CNN from discriminator leaked at time t, it is input into LSTM
+        h_m_t = ouput of previous LSTMCell
+        c_m_t = previous cell state
+        """
+        #print("H_M size: {}".format(h_m_t.size()))
+        #print("C_M size: {}".format(c_m_t.size()))
+        #print("F_t size: {}".format(f_t.size()))
+        h_m_tp1, c_m_tp1 = self.recurrent_unit(f_t, (h_m_t, c_m_t))
+        sub_goal = self.fc(h_m_tp1)
+        sub_goal = torch.renorm(sub_goal, 2, 0, 1.0) #Returns a tensor where each sub-tensor of input along dimension dim is normalized such that the p-norm of the sub-tensor is lower than the value maxnorm
+        return sub_goal, h_m_tp1, c_m_tp1
+    
+class Worker_l2(nn.Module):
+    def __init__(self, batch_size, vocab_size, embed_dim, hidden_dim, 
+                    goal_out_size, goal_size):
+        super(Worker_l2, self).__init__()
+        self.batch_size = batch_size
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+        self.hidden_dim = hidden_dim
+        self.goal_out_size = goal_out_size
+        self.goal_size = goal_size
+
+        self.emb = nn.Embedding(self.vocab_size, self.embed_dim)
+        self.recurrent_unit = nn.LSTMCell(self.embed_dim, self.hidden_dim)
+        self.fc = nn.Linear(self.hidden_dim, self.goal_size*self.vocab_size)
+        self.goal_change = nn.Parameter(torch.zeros(self.goal_out_size, self.goal_size))
+        self._init_params()
+        
+    def _init_params(self):
+        for param in self.parameters():
+            nn.init.normal_(param, std=0.1)
+    def forward(self, x_t, h_w_t, c_w_t):
+        """
+            x_t = last word
+            h_w_t = last output of LSTM in Worker
+            c_w_t = last cell state of LSTM in Worker
+        """
+        x_t_emb = self.emb(x_t)
+        h_w_tp1, c_w_tp1 = self.recurrent_unit(x_t_emb, (h_w_t, c_w_t))
+        output_tp1 = self.fc(h_w_tp1)
+        output_tp1 = output_tp1.view(self.batch_size, self.vocab_size, self.goal_size)
+        return output_tp1, h_w_tp1, c_w_tp1

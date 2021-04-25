@@ -8,6 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from utils import init_vars
+from torch.autograd import Variable
+
 #A truncated distribution has its domain (the x-values) restricted to a certain range of values. For example, you might restrict your x-values to between 0 and 100, written in math terminology as {0 > x > 100}. There are several types of truncated distributions:
 def truncated_normal(shape, lower=-0.2, upper=0.2):
     size = 1
@@ -48,7 +51,6 @@ class Discriminator_l2(nn.Module):
         self.dropout_prob = dropout_prob
         self.l2_reg_lambda = l2_reg_lambda
         self.num_filters_total = sum(self.num_filters)
-
         self.emb = nn.Embedding(self.vocab_size + 1, self.dis_emb_dim)
         self.convs = nn.ModuleList([
             nn.Conv2d(1, num_f, (f_size, self.dis_emb_dim)) for f_size, num_f in zip(self.filter_sizes, self.num_filters)
@@ -60,23 +62,72 @@ class Discriminator_l2(nn.Module):
         #Each channel will be zeroed independently on every forward call
         self.fc = nn.Linear(self.num_filters_total, self.num_classes)
 
-        def forward(self, x):
-            """
-            x: shape(batch_size * par_length_in_sentences * vector_data)
-               type(torch.LongTensor)
-            """
+    def forward(self, x):
+        """
+        x: shape(batch_size * par_length_in_sentences * vector_data)
+        type(torch.LongTensor)
+        """
             
-            convs = [F.relu(conv(x)).squeeze(3) for conv in self.convs] # [batch_size * num_filter * seq_len] --> seq_length: Number of sentences in padded paragraph.
-            pooled_out = [F.max_pool1d(conv, conv.size(2)).squeeze(2) for conv in convs] # [batch_size * num_filter]
-            pred = torch.cat(pooled_out, 1) # batch_size * sum(num_filters)
+        convs = [F.relu(conv(x)).squeeze(3) for conv in self.convs] # [batch_size * num_filter * seq_len] --> seq_length: Number of sentences in padded paragraph.
+        pooled_out = [F.max_pool1d(conv, conv.size(2)).squeeze(2) for conv in convs] # [batch_size * num_filter]
+        pred = torch.cat(pooled_out, 1) # batch_size * sum(num_filters)
             #print("Pred size: {}".format(pred.size()))
-            highway = self.highway(pred)
+        highway = self.highway(pred)
             #print("highway size: {}".format(highway.size()))
-            highway = torch.sigmoid(highway)* F.relu(highway) + (1.0 - torch.sigmoid(highway))*pred
-            features = self.dropout(highway)
-            score = self.fc(features)
-            pred = F.log_softmax(score, dim=1) #batch * num_classes
-            return {"pred":pred, "feature":features, "score": score}
+        highway = torch.sigmoid(highway)* F.relu(highway) + (1.0 - torch.sigmoid(highway))*pred
+        features = self.dropout(highway)
+        score = self.fc(features)
+        pred = F.log_softmax(score, dim=1) #batch * num_classes
+        return {"pred":pred, "feature":features, "score": score}
+
+    def get_sample(self, model_dict, use_cuda=False, temperature=1.0):
+        generator = model_dict["generator"]
+        discriminator = model_dict["discriminator"]
+        h_w_t, c_w_t, h_m_t, c_m_t, last_goal, real_goal, x_t = \
+            init_vars(generator, discriminator, use_cuda)
+        t = 0
+        gen_token_list = []
+        batch_size = generator.worker.batch_size
+        seq_len = discriminator.seq_len
+        step_size = generator.step_size
+        goal_out_size = generator.worker.goal_out_size
+        vocab_size = discriminator.vocab_size
+
+        ##################################################################
+            
+        vector_size = discriminator.num_filters_total
+
+        ##################################################################
+            
+        #G forward
+        while t < seq_len:
+            #Extract f_t
+            if t == 0:
+                cur_sen = Variable(nn.init.constant_(
+                    torch.zeros(batch_size, seq_len, vector_size), vocab_size)
+                ).long()
+                
+                if use_cuda:
+                    cur_sen = cur_sen.cuda(non_blocking=True)
+            else:
+                cur_sen = torch.stack(gen_token_list).permute(1, 0)
+                cur_sen = F.pad(
+                    cur_sen, (0, seq_len - t), value=vocab_size
+                )
+            f_t = discriminator(cur_sen)["feature"]
+            #G forward step
+            x_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal, real_goal, sub_goal, probs, t_ = generator(x_t, f_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal,real_goal, t, temperature)
+            if t % step_size == 0:
+                if t > 0:
+                    real_goal = last_goal
+                    last_goal = Variable(torch.zeros(batch_size, goal_out_size))
+                if use_cuda:
+                    last_goal = last_goal.cuda(non_blocking=True)
+                gen_token_list.append(x_t)
+                t = t_
+            gen_token = torch.stack(gen_token_list).permute(1,0)
+        return gen_token
+
             
         
 class Discriminator(nn.Module):

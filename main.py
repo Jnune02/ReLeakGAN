@@ -268,12 +268,15 @@ def pretrain_generator_l2(model_dict_l2, optimizer_dict, scheduler_dict):
 
     return model_dict_l2, False, False
 
-def generate_samples(model_dict, negative_file, batch_size,
+def generate_samples(model_dict, negative_file, batch_size, lvl="l1",
                      use_cuda=False, temperature=1.0):
     
     neg_data = []
     for i in range(batch_size):
-        sample = get_sample(model_dict, use_cuda, temperature)
+        if lvl == "l1":
+            sample = get_sample(model_dict, use_cuda, temperature)
+        elif lvl == "l2":
+            sample = model_dict["discriminator"].get_sample(model_dict, use_cuda, temperature)
 
         if i < 25:
             print("Generated: %s" % sample)
@@ -325,6 +328,7 @@ def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
             #
             
             print("Featural Output: %s" % outs["feature"])
+            print("Shape of Vector: %s" % list(outs["feature"].shape))
 
             #
             #################
@@ -350,7 +354,7 @@ def pretrain_discriminator_l2(model_dict_l2, optimizer_dict_l2, scheduler_dict_l
     """
     Pretrain the 2nd level discriminator.
     """
-    discriminator_l2 = model_dict_l2["discriminator_l2"]
+    discriminator_l2 = model_dict_l2["discriminator"]
     batch_size = dis_l2_data_params["batch_size"]
 
     d_optimizer = optimizer_dict_l2["discriminator"]
@@ -360,7 +364,7 @@ def pretrain_discriminator_l2(model_dict_l2, optimizer_dict_l2, scheduler_dict_l
 
     print("Generate samples from untrained 2nd level generator.")
     
-    generate_samples(model_dict_l2, neg_l2_fd, batch_size, use_cuda, temperature)
+    generate_samples(model_dict_l2, neg_l2_fd, batch_size, "l2", use_cuda, temperature)
     dataloader = dis_data_loader(**dis_l2_data_params)
 
     # I don't yet know what cross_entropy is, but it was in the other
@@ -581,11 +585,11 @@ def fetch_l2_corpus(model_dict, positive_filepath, dis_l2_data_params, use_cuda)
                                     num_workers=4, pin_memory=dis_l2_data_params["pin_memory"])
 
     vectors = []
-
-    sout = open("./data/sout.txt", 'w')
     
     for i, sample in enumerate(dataloader):
         data, label = sample["data"], sample["label"]
+
+        print("data: %s", data)
         data = Variable(data)
         label = Variable(label)
 
@@ -594,14 +598,16 @@ def fetch_l2_corpus(model_dict, positive_filepath, dis_l2_data_params, use_cuda)
             label = label.cuda()
 
         outs = discriminator(data)
-        print("Featural Vector: %s" % outs["feature"].tolist())
-        print("size of vector: %s" % (list(outs["feature"].size())), file=sout)
-        featural_vector = outs["feature"].tolist()
-        vectors.append(featural_vector)
+        print("Featural Vector: %s" % outs["feature"])
 
-    sout.close()
-    featural_data = np.array(vectors)
+        featural_vector = outs["feature"]
+        print("Shape of featural vector: %s" % list(featural_vector.shape))
+        
+        vectors.append(featural_vector.cpu().detach())
 
+    featural_data = np.stack(vectors, axis=0)
+    print("featural_data shape: %s", list(featural_data.shape))
+    
     # Remove the 'batch' axis.
     axis0 = featural_data.shape[0]
     print("axis0: %s " % axis0)
@@ -609,9 +615,9 @@ def fetch_l2_corpus(model_dict, positive_filepath, dis_l2_data_params, use_cuda)
     print("axis1: %s " % axis1)
     
     featural_data = featural_data.reshape((axis0, axis1))
-    print("Featural Data Initial Shape: %s" % list(featural_data.shape))
-    return featural_data
     
+    return featural_data
+
 # This method should open up the positive_filepath file, and using
 # other parameters, pad all the data inside and generally make it so
 # that the data is the correct shape for being fed into the l2
@@ -793,6 +799,7 @@ def main():
         print("Attempting to load previously generated l2_corpus.")
         l2_corpus = np.load("./data/featural_vectors.npy")
     except:
+        print("No previous l2_corpus found!! Initiating creation...")
         print("Extract level 2 input from level 1 discriminator")
         l2_corpus = fetch_l2_corpus(model_dict, param_dict["dis_data_params"]["positive_filepath"],
                                     param_dict_l2["dis_data_params"], use_cuda=use_cuda)
@@ -822,11 +829,11 @@ def main():
     
     for i in range(num_epochs):
         print("Epoch: {}/{} Pre-Discrimination".format(i, num_epochs))
-        # model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_discriminator_l2(model_dict_l2,
-        #                                                                                 optimizer_dict_l2,
-        #                                                                                 scheduler_dict_l2,
-        #                                                                                 dis_l2_data_params,
-        #                                                                                 use_cuda=use_cuda)
+        model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_discriminator_l2(model_dict_l2,
+                                                                                         optimizer_dict_l2,
+                                                                                         scheduler_dict_l2,
+                                                                                         dis_l2_data_params,
+                                                                                         use_cuda=use_cuda)
 
         if DEBUG_NODE == True:
             break
