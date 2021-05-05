@@ -28,7 +28,7 @@ def get_params(filePath):
     return params
 
 def restore_checkpoint():
-    checkpoint = torch.load("checkpoints/checkpoint.pth.tar")
+    checkpoint = torch.load("checkpoints/checkpoint-lvl1.pth.tar")
     return checkpoint
 
 ckpt = restore_checkpoint()

@@ -270,23 +270,22 @@ def pretrain_generator_l2(model_dict_l2, optimizer_dict, scheduler_dict):
 
 def generate_samples(model_dict, negative_file, batch_size, lvl="l1",
                      use_cuda=False, temperature=1.0):
+
+    print("generating samples")
     
     neg_data = []
-    for i in range(batch_size):
-        if lvl == "l1":
-            sample = get_sample(model_dict, use_cuda, temperature)
-        elif lvl == "l2":
+    for i in range(batch_size):        
+        if lvl == "l2":
             sample = model_dict["discriminator"].get_sample(model_dict, use_cuda, temperature)
-
-        if i < 25:
             print("Generated: %s" % sample)
-        elif i == 25:        
+            sample = sample.cpu()
+            neg_data.append(sample.data.numpy())
+        else:
+            sample = get_sample(model_dict, use_cuda, temperature)
+            print("Sample Shape: %s" % list(sample.shape))
             sample = sample.cpu()
             neg_data.append(sample.data.numpy())
     neg_data = np.concatenate(neg_data, axis=0)
-
-    print("Saving generated samples for reuse.")
-    
     np.save(negative_file, neg_data)
 
 def pretrain_discriminator(model_dict, optimizer_dict, scheduler_dict,
@@ -421,7 +420,8 @@ def adv_l2_train(model_dict, model_dict_l2, optimizer_dict, scheduler_dict, use_
 def adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_dataloader_params,
                       vocab_size, pos_file, neg_file, batch_size, gen_train_num=1,
                       dis_train_epoch=5, dis_train_num=3, max_norm=5.0,
-                      rollout_num=4, use_cuda=False, temperature=1.0, epoch=1, tot_epoch=100):
+                      rollout_num=4, use_cuda=False, temperature=1.0, epoch=1, tot_epoch=100,
+                      lvl="l1"):
     """
         Get all the models, optimizer and schedulers
     """                     
@@ -541,9 +541,9 @@ def adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_dataloader
     return model_dict, optimizer_dict, scheduler_dict
 
 
-def save_checkpoint(model_dict, optimizer_dict, scheduler_dict):
+def save_checkpoint(model_dict, optimizer_dict, scheduler_dict, lvl):
     file_path = "./checkpoints/"
-    file_name = "checkpoint" + ".pth.tar"
+    file_name = "checkpoint" + "-" + lvl + ".pth.tar"
     torch.save({"model_dict": model_dict, "optimizer_dict": optimizer_dict, "scheduler_dict": scheduler_dict}, file_path + file_name)
 
 def restore_checkpoint(ckpt_path):
@@ -774,7 +774,7 @@ def main():
         model_dict, optimizer_dict, scheduler_dict = adversarial_train(model_dict, optimizer_dict, scheduler_dict, dis_data_params, vocab_size=vocab_size, pos_file=pos_file, neg_file=neg_file, batch_size=batch_size, use_cuda=use_cuda, epoch=epoch, tot_epoch=param_dict["train_params"]["total_epoch"])
 
     print("Saving Trained Level 1 Models as Checkpoint")
-    save_checkpoint(model_dict, optimizer_dict, scheduler_dict)
+    save_checkpoint(model_dict, optimizer_dict, scheduler_dict, lvl="lvl1")
         
     # * * *
         
@@ -814,6 +814,8 @@ def main():
 
         print("Save converted featural vectors for reuse.")
         np.save("./data/featural_vectors.npy", l2_corpus)
+
+    # l2_corpus = torch.from_numpy(l2_corpus).long()
         
     print("######################################################################")
     print("# Now Pretraining Level 2 Discriminator... please stand by.          #")
@@ -848,7 +850,7 @@ def main():
     
     for i in range(num_epochs):
         print("Epoch: {}/{} Pre-Generation".format(i, num_epochs))
-        # model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_generator_l2(model_dict_l2, optimizer_dict, schedular_dict, use_cuda=use_cuda)
+        model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = pretrain_generator_l2(model_dict_l2, optimizer_dict, schedular_dict, use_cuda=use_cuda)
 
         if DEBUG_NODE == True:
             break
@@ -859,8 +861,34 @@ def main():
     # because we are training BOTH the l1 AND the l2 discriminators
     # and generators in tandem.
 
-    print("Level 2 Adversarial Training Not Yet Implemented.")
+    print("######################################################################")
+    print("# Now Performing Level 2 Adversarial Training...                     #")
+    print("######################################################################")
 
+    vocab_size = param_dict_l2["leak_gan_params"]["discriminator_params"]["vocab_size"]
+    pos_file = dis_l2_data_params["positive_filepath"]
+    neg_file = dis_l2_data_params["negative_filepath"]
+    batch_size = dis_l2_data_params["batch_size"]
+    tot_epoch = param_dict_l2["train_params"]["total_epoch"]
+
+    for epoch in range(param_dict["train_params"]["total_epoch"]):
+        print("Epoch: {}/{}  Adv".format(epoch, param_dict["train_params"]["total_epoch"]))
+        model_dict_l2, optimizer_dict_l2, scheduler_dict_l2 = adversarial_train(model_dict_l2,
+                                                                                optimizer_dict_l2,
+                                                                                scheduler_dict_l2,
+                                                                                dis_l2_data_params,
+                                                                                vocab_size=vocab_size,
+                                                                                pos_file=pos_file,
+                                                                                neg_file=neg_file,
+                                                                                batch_size=batch_size,
+                                                                                use_cuda=use_cuda,
+                                                                                epoch=epoch,
+                                                                                tot_epoch=tot_epoch,
+                                                                                lvl="l2")
+
+
+    print("Saving Trained Level 2 Models as Checkpoint")
+    save_checkpoint(model_dict_l2, optimizer_dict_l2, scheduler_dict_l2, lvl="lvl2")
     
     ##############################################################################
     # Please note: Comments below this point MAY NOT actually reflect

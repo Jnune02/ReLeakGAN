@@ -45,19 +45,14 @@ python ./main.py | tee -a $CWD/sout.log
 
 # start generating trained output
 echo "Finished training. Extracting Results" | tee -a $CWD/sout.log
-cd ./checkpoints/
-python ./main.py | tee -a $CWD/sout.log
+python ./extract_checkpoints.py | tee -a $CWD/sout.log
 
 # start evaluation using automated metrics
 echo "Finished extraction. Beginning Metric Analysis." | tee -a $CWM/sout.log
-cp -R ./data/* $CWD/metrics/data/
-
-cd $CWD/metrics/
-python ./main.py | tee -a $CWD/sout.log
+cp -R ./checkpoints/data/* ./metrics/data/
+python ./metric_analysis.py | tee -a $CWD/sout.log
 
 # process complete.
-cd $CWD
-
 echo "Process complete. Exit."
 exit 0
 

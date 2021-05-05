@@ -52,9 +52,12 @@ class Discriminator_l2(nn.Module):
         self.l2_reg_lambda = l2_reg_lambda
         self.num_filters_total = sum(self.num_filters)
         self.emb = nn.Embedding(self.vocab_size + 1, self.dis_emb_dim)
+        self.vec_length = self.num_filters_total
+                
         self.convs = nn.ModuleList([
-            nn.Conv2d(1, num_f, (f_size, self.dis_emb_dim)) for f_size, num_f in zip(self.filter_sizes, self.num_filters)
+            nn.Conv3d(1, num_f, (f_size, 30, self.vec_length)) for f_size, num_f in zip(self.filter_sizes, self.num_filters)
         ])
+        
         self.highway = nn.Linear(self.num_filters_total, self.num_filters_total)
         #in_features = out_features = sum of num_festures
         self.dropout = nn.Dropout(p = self.dropout_prob)
@@ -67,10 +70,12 @@ class Discriminator_l2(nn.Module):
         x: shape(batch_size * par_length_in_sentences * vector_data)
         type(torch.LongTensor)
         """
-            
+
+        x = self.emb(x).unsqueeze(1)
         convs = [F.relu(conv(x)).squeeze(3) for conv in self.convs] # [batch_size * num_filter * seq_len] --> seq_length: Number of sentences in padded paragraph.
-        pooled_out = [F.max_pool1d(conv, conv.size(2)).squeeze(2) for conv in convs] # [batch_size * num_filter]
-        pred = torch.cat(pooled_out, 1) # batch_size * sum(num_filters)
+        pooled_out = [F.max_pool3d(conv, conv.size(2)).squeeze(2) for conv in convs] # [batch_size * num_filter]
+        
+        pred = torch.cat(convs, 1) # batch_size * sum(num_filters)
             #print("Pred size: {}".format(pred.size()))
         highway = self.highway(pred)
             #print("highway size: {}".format(highway.size()))
@@ -103,8 +108,8 @@ class Discriminator_l2(nn.Module):
         while t < seq_len:
             #Extract f_t
             if t == 0:
-                cur_sen = Variable(nn.init.constant_(
-                    torch.zeros(batch_size, seq_len, vector_size), vocab_size)
+                cur_sen = Variable(
+                    torch.zeros(batch_size, seq_len, vector_size)
                 ).long()
                 
                 if use_cuda:
@@ -114,7 +119,7 @@ class Discriminator_l2(nn.Module):
                 cur_sen = F.pad(
                     cur_sen, (0, seq_len - t), value=vocab_size
                 )
-            f_t = discriminator(cur_sen)["feature"]
+            f_t = self.forward(cur_sen)["feature"]
             #G forward step
             x_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal, real_goal, sub_goal, probs, t_ = generator(x_t, f_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal,real_goal, t, temperature)
             if t % step_size == 0:
@@ -187,13 +192,32 @@ class Discriminator(nn.Module):
 
         emb = self.emb(x).unsqueeze(1)
         convs = [F.relu(conv(emb)).squeeze(3) for conv in self.convs] # [batch_size * num_filter * seq_len]
+        # for con in convs:
+        #     print("OutConv Feature Shape: %s" % list(con.shape))
+        
         pooled_out = [F.max_pool1d(conv, conv.size(2)).squeeze(2) for conv in convs] # [batch_size * num_filter]
+
+        # for outpool in pooled_out:
+        #     print("Outpool Feature Shape: %s" % list(outpool.shape))
+        
         pred = torch.cat(pooled_out, 1) # batch_size * sum(num_filters)
+
+        # print("outpool concatenated shape: %s" % list(pred.shape))
+        
         #print("Pred size: {}".format(pred.size()))
         highway = self.highway(pred)
+
+        # print("highway shape: %s" % list(highway.shape))
+        
         #print("highway size: {}".format(highway.size()))
         highway = torch.sigmoid(highway)* F.relu(highway) + (1.0 - torch.sigmoid(highway))*pred
+
+        # print ("post sigmoid highway shape: %s" % list(highway.shape))
+        
         features = self.dropout(highway)
+
+        #print("features pre-return shape: %s" % list(features.shape))
+        
         score = self.fc(features)
         pred = F.log_softmax(score, dim=1) #batch * num_classes
         return {"pred":pred, "feature":features, "score": score}

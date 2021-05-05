@@ -312,6 +312,9 @@ def recurrent_func(f_type = "pre"):
                         cur_sen, (0, seq_len - t), value=vocab_size
                     )
                 f_t = discriminator(cur_sen)["feature"]
+
+                #print("Feature shape post-return: %s" % list(f_t.shape))
+                
                 #G forward step
                 x_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal, real_goal, sub_goal, probs, t_ = generator(x_t, f_t, h_m_t, c_m_t, h_w_t, c_w_t, last_goal,real_goal, t, temperature)
                 if t % step_size == 0:
